@@ -265,7 +265,233 @@ async def on_command_error(ctx, error):
 
     else:
         print(error)
+import discord
+from discord.ext import commands, tasks
+import asyncio
+from datetime import datetime
 
+TOKEN = "YOUR_BOT_TOKEN"
+
+intents = discord.Intents.default()
+intents.message_content = True
+intents.guilds = True
+
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+created_channels = set()
+
+# =========================
+# CONFIG
+# =========================
+
+DIVISION_CATEGORY = "Division One"
+MATCH_DAYS = ["Monday", "Thursday"]
+
+# =========================
+# BOT READY
+# =========================
+
+@bot.event
+async def on_ready():
+    print(f"{bot.user} is online!")
+    create_match_lounges.start()
+
+# =========================
+# AUTO DELETE
+# =========================
+
+async def delete_after_24h(channel):
+    await asyncio.sleep(86400)
+
+    try:
+        await channel.delete(reason="Match lounge expired")
+    except:
+        pass
+
+# =========================
+# CREATE LOUNGE
+# =========================
+
+async def create_lounge(guild, team1, team2):
+
+    channel_name = (
+        f"{team1}-vs-{team2}"
+        .lower()
+        .replace(" ", "-")
+    )
+
+    if channel_name in created_channels:
+        return
+
+    category = discord.utils.get(
+        guild.categories,
+        name=DIVISION_CATEGORY
+    )
+
+    if category is None:
+        category = await guild.create_category(
+            DIVISION_CATEGORY
+        )
+
+    channel = await guild.create_text_channel(
+        channel_name,
+        category=category
+    )
+
+    created_channels.add(channel_name)
+
+    await channel.send(
+        f"""
+🏆 Division One
+
+⚽ {team1} vs {team2}
+
+Please use this lounge to:
+
+• Arrange kick-off
+• Discuss lineups
+• Report issues
+• Contact opponents
+
+⏳ Auto deletes in 24 hours.
+"""
+    )
+
+    bot.loop.create_task(
+        delete_after_24h(channel)
+    )
+
+# =========================
+# MONDAY / THURSDAY CHECK
+# =========================
+
+@tasks.loop(hours=1)
+async def create_match_lounges():
+
+    today = datetime.now().strftime("%A")
+
+    if today not in MATCH_DAYS:
+        return
+
+    guild = bot.guilds[0]
+
+    # TEMPORARY FIXTURES
+    # REPLACE WITH CLUBSLEAGUES DATA
+
+    fixtures = [
+        ("KVT FC", "Empire City FC"),
+        ("Proper Swilly", "Miami Pulse"),
+        ("Skills Hub", "Barnt Green")
+    ]
+
+    for team1, team2 in fixtures:
+        await create_lounge(
+            guild,
+            team1,
+            team2
+        )
+
+# =========================
+# MANUAL MATCH
+# =========================
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def match(ctx, *, teams):
+
+    team1, team2 = teams.split(",")
+
+    await create_lounge(
+        ctx.guild,
+        team1.strip(),
+        team2.strip()
+    )
+
+    await ctx.send("✅ Lounge created.")
+
+# =========================
+# RESULT
+# =========================
+
+@bot.command()
+async def result(
+    ctx,
+    team1,
+    score1: int,
+    score2: int,
+    team2
+):
+
+    await ctx.send(
+        f"""
+📊 RESULT
+
+{team1} {score1}-{score2} {team2}
+
+Submitted by:
+{ctx.author.mention}
+"""
+    )
+
+# =========================
+# RESCHEDULE
+# =========================
+
+@bot.command()
+async def reschedule(ctx, *, reason):
+
+    await ctx.send(
+        f"""
+📅 RESCHEDULE REQUEST
+
+Requested by:
+{ctx.author.mention}
+
+Reason:
+{reason}
+"""
+    )
+
+# =========================
+# DEFAULT
+# =========================
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def default(ctx, winner, loser):
+
+    await ctx.send(
+        f"""
+⚠ DEFAULT RESULT
+
+Winner:
+{winner}
+
+Loser:
+{loser}
+
+Score:
+1-0
+"""
+    )
+
+# =========================
+# HELP
+# =========================
+
+@bot.command()
+async def leaguehelp(ctx):
+
+    await ctx.send("""
+🏆 MATCH DAY BOT
+
+!match Team A, Team B
+!result TeamA 2 1 TeamB
+!reschedule reason
+!default winner loser
+""")
+
+bot.run(TOKEN)
 # ==========================
 # START BOT
 # ==========================
